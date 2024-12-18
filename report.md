@@ -30,6 +30,24 @@
 测试后可以发现当前的加速比随着输入大小的增加而上升，可拓展性较强。
 
 
-### 3.2 利用shared_memory进行优化
+### 3.2 使用更多的线程数目,减少cudaMemcpy
 
+在demo中，每次存在临时空间到输入的 `cudaMemcpy`，可以将临时空间和输入的空间进行交换，实现的代码如下所示，在一个循环内调用两次核函数，同时让每个线程计算一个元素。
+
+```c
+// 核心计算代码，将世界向前推进T个时刻
+void life3d_run(int N, char *universe, int T, char* device_universe,char* device_out)
+{
+    dim3 g = dim3(1, N, N);
+    dim3 b = dim3(N, 1, 1);
+    // cudaMemcpy(device_universe, universe, N*N*N*sizeof(char), cudaMemcpyHostToDevice);
+
+
+    for (int i = 0; i < T; i+=2) {
+        life3d<<<g, b>>>(device_universe, device_out, N);
+        life3d<<<g, b>>>(device_out, device_universe, N);
+    }
+}
+```
+测试后在256x8输入下，加速比达到1.938
 
