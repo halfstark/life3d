@@ -12,7 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#define VERIFY
+// #define VERIFY
 #define AT(x, y, z) universe[(x) * N * N + (y) * N + z]
 #define ATin(x, y, z) in[(x) * N * N + (y) * N + z]
 #define ATgolden(x, y, z) golden[(x) * N * N + (y) * N + z]
@@ -110,32 +110,35 @@ __global__ void life3d(char* in, char* out, int N) {
     // printf("x y z: %d %d %d\n", x, y, z);
     // int index = x*N*N + y*N + z;
     // print_universe_dev(N, in);
-
-    // for (int i = 0; i < 4; i++) {
-    //     for (int j = 0; j < 4; j++) {
-    //         int x1 = x*4 + i;
-    //         int y1 = y;
-    //         int z1 = z*4 + j;
-    //         // int index = (z*4 + j) + y*N + (x*4 + i)*N*N;
-    //         // printf("x1 %d %d %d\n", x1, y1, z1);
     int cnt = 0;
+    extern __shared__ char sharedIn[];
     for (int dx = -1; dx <= 1; dx++)
-        for (int dy = -1; dy <= 1; dy++)
-            for (int dz = -1; dz <= 1; dz++) {
-                if (dx == 0 && dy == 0 && dz == 0) continue;
-                    int nx = (x + dx + N) % N;
-                    int ny = (y + dy + N) % N;
+        for (int dy = -1; dy <= 1; dy++) {
+            int nx = (x + dx + N) % N;
+            int ny = (y + dy + N) % N;
+            sharedIn[(dx+1)*3 + (dy+1) + z*9] = ATin(nx, ny, z);
+        }
+    __syncthreads();
+    char now = ATin(x, y, z);
+    for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++) {
+                int nx = (x + dx + N) % N;
+                int ny = (y + dy + N) % N;
+                // sharedIn[z] = ATin(nx, ny, z);
+                // __syncthreads();
+                for (int dz = -1; dz <= 1; dz++) { 
+                    if (dx == 0 && dy == 0&& dz == 0) continue;
                     int nz = (z + dz + N) % N;
-                        // printf("")
-                    cnt += ATin(nx, ny, nz);
-            }
-            // printf("cnt: %d\n", cnt);
-            if (ATin(x, y, z) && (cnt < 5 || cnt > 7))
-                out[x * N * N + y * N + z] = 0;
-            else if (!ATin(x, y, z) && cnt == 6)
-                out[x * N * N + y * N + z] = 1;
-            else
-                out[x * N * N + y * N + z] = ATin(x, y, z);
+                    cnt += sharedIn[nz*9 + (dx+1)*3 + (dy+1)];
+                    // cnt += ATin(nx, ny, nz);
+                }
+        }
+    if (now && (cnt < 5 || cnt > 7))
+        out[x * N * N + y * N + z] = 0;
+    else if (!now && cnt == 6)
+        out[x * N * N + y * N + z] = 1;
+        else
+    out[x * N * N + y * N + z] = now;
 }
 // 核心计算代码，将世界向前推进T个时刻
 void life3d_run(int N, char *universe, int T, char* device_universe,char* device_out)
@@ -147,13 +150,8 @@ void life3d_run(int N, char *universe, int T, char* device_universe,char* device
 
     for (int i = 0; i < T; i+=2) {
         // population_dev<<<1,1>>>(N, device_universe);
-        life3d<<<g, b>>>(device_universe, device_out, N);
-        life3d<<<g, b>>>(device_out, device_universe, N);
-        // population_dev<<<1,1>>>(N, device_out);
-        // cudaMemcpy(device_universe, device_out, N*N*N, cudaMemcpyDeviceToDevice);
-        // cudaMemcpy(device_out, device_universe, N*N*N, cudaMemcpyDeviceToDevice);
-        // cudaMemcpy(universe, device_out, N*N*N, cudaMemcpyDeviceToDevice);
-        // print_universe(N, universe);
+        life3d<<<g, b, 9*N>>>(device_universe, device_out, N);
+        life3d<<<g, b, 9*N>>>(device_out, device_universe, N);
     }
 
 }

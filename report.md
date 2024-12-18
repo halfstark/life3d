@@ -49,5 +49,43 @@ void life3d_run(int N, char *universe, int T, char* device_universe,char* device
     }
 }
 ```
-测试后在256x8输入下，加速比达到1.938
+测试后在1024x8输入下，加速比达到1.938
 
+### 3.2 使用shared memory减少访存的时间
+
+使用shared memory首先需要考虑一下GPU上的shared memory大小
+
+可以发现本次的GPU其实并不足以将全部的空间放入到shared memory中，所以只能在一个维度上使用共享内存
+
+```shell
+  Total amount of constant memory:               65536 bytes
+  Total amount of shared memory per block:       49152 bytes
+  Total number of registers available per block: 65536
+```
+
+对于在z轴上的线程，我们将其全部划分给一个block，对于两个相邻的线程而言，其在z轴上有3x3x2的数据属于重合数据，故可以使用shared_mem对z轴上的数据进行共享，实现的代码如下所示
+
+```c
+    for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++) {
+            int nx = (x + dx + N) % N;
+            int ny = (y + dy + N) % N;
+            sharedIn[(dx+1)*3 + (dy+1) + z*9] = ATin(nx, ny, z);
+        }
+    __syncthreads();
+    char now = ATin(x, y, z);
+    for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++) {
+                int nx = (x + dx + N) % N;
+                int ny = (y + dy + N) % N;
+                // sharedIn[z] = ATin(nx, ny, z);
+                // __syncthreads();
+                for (int dz = -1; dz <= 1; dz++) { 
+                    if (dx == 0 && dy == 0&& dz == 0) continue;
+                    int nz = (z + dz + N) % N;
+                    cnt += sharedIn[nz*9 + (dx+1)*3 + (dy+1)];
+                    // cnt += ATin(nx, ny, nz);
+                }
+        }
+```
+在1024x8上有10%左右的提升
