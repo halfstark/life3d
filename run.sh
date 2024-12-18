@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 
 N=256
-T=8
+T=16
 
 python3 RandGen.py $N
 nvcc life3d.cu -o life3d
